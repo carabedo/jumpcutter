@@ -11,6 +11,14 @@ from shutil import copyfile, rmtree
 import os
 import argparse
 from pytube import YouTube
+import subprocess
+import cv2
+
+def getfps(filename):
+    cap=cv2.VideoCapture(filename)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    return(fps)
+
 
 def downloadFile(url):
     name = YouTube(url).streams.first().download()
@@ -71,43 +79,44 @@ args = parser.parse_args()
 frameRate = args.frame_rate
 SAMPLE_RATE = args.sample_rate
 SILENT_THRESHOLD = args.silent_threshold
-FRAME_SPREADAGE = args.frame_margin
+FRAME_SPREADAGE = args.frame_margin # ventana
 NEW_SPEED = [args.silent_speed, args.sounded_speed]
-if args.url != None:
-    INPUT_FILE = downloadFile(args.url)
-else:
-    INPUT_FILE = args.input_file
-URL = args.url
+INPUT_FILE = args.input_file
 FRAME_QUALITY = args.frame_quality
-
-assert INPUT_FILE != None , "why u put no input file, that dum"
-    
-if len(args.output_file) >= 1:
-    OUTPUT_FILE = args.output_file
-else:
-    OUTPUT_FILE = inputToOutputFilename(INPUT_FILE)
+#genera el nombre del output
+OUTPUT_FILE = inputToOutputFilename(INPUT_FILE)
 
 TEMP_FOLDER = "TEMP"
-AUDIO_FADE_ENVELOPE_SIZE = 400 # smooth out transitiion's audio by quickly fading in/out (arbitrary magic number whatever)
+AUDIO_FADE_ENVELOPE_SIZE = 400 
+# smooth out transitiion's audio 
+# by quickly fading in/out (arbitrary magic number whatever)
     
+#mkdir    
 createPath(TEMP_FOLDER)
 
+#dumpea jpgs
 command = "ffmpeg -i "+INPUT_FILE+" -qscale:v "+str(FRAME_QUALITY)+" "+TEMP_FOLDER+"/frame%06d.jpg -hide_banner"
 subprocess.call(command, shell=True)
 
+#dumpea audio
 command = "ffmpeg -i "+INPUT_FILE+" -ab 160k -ac 2 -ar "+str(SAMPLE_RATE)+" -vn "+TEMP_FOLDER+"/audio.wav"
-
 subprocess.call(command, shell=True)
 
+#So when you use 2>&1 you are basically 
+# saying “Redirect the stderr to the same place we are redirecting the stdout”
+# lo mandan al ffmpeg a leer el archivo
 command = "ffmpeg -i "+TEMP_FOLDER+"/input.mp4 2>&1"
 f = open(TEMP_FOLDER+"/params.txt", "w")
 subprocess.call(command, shell=True, stdout=f)
 
 
-
+# scipy.wavfile
 sampleRate, audioData = wavfile.read(TEMP_FOLDER+"/audio.wav")
 audioSampleCount = audioData.shape[0]
 maxAudioVolume = getMaxVolume(audioData)
+
+
+#busca fps en el output del ffmepd?
 
 f = open(TEMP_FOLDER+"/params.txt", 'r+')
 pre_params = f.read()
@@ -118,14 +127,18 @@ for line in params:
     if m is not None:
         frameRate = float(m.group(1))
 
+##
+
 samplesPerFrame = sampleRate/frameRate
 
+# x del audio
 audioFrameCount = int(math.ceil(audioSampleCount/samplesPerFrame))
 
+# 
 hasLoudAudio = np.zeros((audioFrameCount))
 
 
-
+# identifica maxchunks en audio
 for i in range(audioFrameCount):
     start = int(i*samplesPerFrame)
     end = min(int((i+1)*samplesPerFrame),audioSampleCount)
@@ -134,8 +147,12 @@ for i in range(audioFrameCount):
     if maxchunksVolume >= SILENT_THRESHOLD:
         hasLoudAudio[i] = 1
 
+
 chunks = [[0,0,0]]
+
+# los jppgs q van?
 shouldIncludeFrame = np.zeros((audioFrameCount))
+#spreadage=window
 for i in range(audioFrameCount):
     start = int(max(0,i-FRAME_SPREADAGE))
     end = int(min(audioFrameCount,i+1+FRAME_SPREADAGE))
