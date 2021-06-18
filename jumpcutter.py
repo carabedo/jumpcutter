@@ -10,7 +10,6 @@ import math
 from shutil import copyfile, rmtree
 import os
 import argparse
-from pytube import YouTube
 import subprocess
 import cv2
 
